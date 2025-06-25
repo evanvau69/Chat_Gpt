@@ -2,7 +2,10 @@ import os
 import openai
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from fastapi import FastAPI
+import uvicorn
 import asyncio
+from threading import Thread
 
 # API Key from Environment
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -28,34 +31,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("❌ Error:", e)
         await update.message.reply_text("😓 দুঃখিত, কিছু একটা সমস্যা হয়েছে।")
 
-# Render-এর জন্য HTTP সার্ভার (পোর্ট চেকের জন্য)
-async def run_http_server():
-    from fastapi import FastAPI
-    import uvicorn
-    
+# FastAPI App for Render Health Check
+def run_fastapi():
     app = FastAPI()
     
     @app.get("/")
     async def health_check():
-        return {"status": "Bot is running"}
+        return {"status": "Telegram Bot is running"}
     
-    config = uvicorn.Config(app, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
-    server = uvicorn.Server(config)
-    await server.serve()
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
 
-async def main():
-    # Telegram বট ইনিশিয়ালাইজ করুন
+# Telegram Bot Runner
+def run_bot():
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    
-    # হ্যান্ডলার যোগ করুন
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # HTTP সার্ভার এবং Telegram বট একসাথে রান করুন
-    await asyncio.gather(
-        application.run_polling(),
-        run_http_server()
-    )
+    print("🤖 Starting Telegram Bot...")
+    application.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Start FastAPI in a separate thread
+    fastapi_thread = Thread(target=run_fastapi, daemon=True)
+    fastapi_thread.start()
+    
+    # Start Telegram Bot in the main thread
+    run_bot()

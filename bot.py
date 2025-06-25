@@ -2,9 +2,6 @@ import os
 import openai
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-from fastapi import FastAPI
-import uvicorn
-import threading
 import asyncio
 
 # API Key from Environment
@@ -31,29 +28,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("❌ Error:", e)
         await update.message.reply_text("😓 দুঃখিত, কিছু একটা সমস্যা হয়েছে।")
 
-# FastAPI App for Render Health Check
-def run_fastapi():
+# Render-এর জন্য HTTP সার্ভার (পোর্ট চেকের জন্য)
+async def run_http_server():
+    from fastapi import FastAPI
+    import uvicorn
+    
     app = FastAPI()
     
     @app.get("/")
     async def health_check():
-        return {"status": "Telegram Bot is running"}
+        return {"status": "Bot is running"}
     
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    config = uvicorn.Config(app, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    server = uvicorn.Server(config)
+    await server.serve()
 
-# Telegram Bot Runner
-async def run_bot():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    await app.initialize()
-    await app.start()
-    print("🤖 Telegram Bot is running...")
-    await asyncio.Event().wait()  # Keep the bot running
+async def main():
+    # Telegram বট ইনিশিয়ালাইজ করুন
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    
+    # হ্যান্ডলার যোগ করুন
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # HTTP সার্ভার এবং Telegram বট একসাথে রান করুন
+    await asyncio.gather(
+        application.run_polling(),
+        run_http_server()
+    )
 
 if __name__ == "__main__":
-    # Start FastAPI server in a separate thread
-    threading.Thread(target=run_fastapi, daemon=True).start()
-    
-    # Start Telegram Bot
-    asyncio.run(run_bot())
+    asyncio.run(main())
